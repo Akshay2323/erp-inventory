@@ -26,6 +26,15 @@ const child = require('./childService');
 const PROJECT_ROOT = path.join(__dirname, '..', '..', '..');
 const CODE_RE = /^[A-Z0-9][A-Z0-9\-_/]{0,29}$/;
 const KYC_STATUSES = ['PENDING', 'VERIFIED', 'REJECTED'];
+
+function normalizeKycStatus(raw) {
+  const s = cleanText(raw)?.toUpperCase();
+  if (!s) return s;
+  if (s === 'VEIFIED' || s === 'VERIFY') return 'VERIFIED';
+  if (s === 'REJECT') return 'REJECTED';
+  if (s === 'PEND') return 'PENDING';
+  return s;
+}
 /** Profile fields that can trigger each duplicate match — edits only warn about matches they introduce. */
 const DUPLICATE_FIELDS = {
   GSTIN: ['gstin'], PAN: ['pan'], MOBILE: ['mobile', 'alt_mobile'], EMAIL: ['email'], NAME: ['name', 'legal_name'],
@@ -189,7 +198,7 @@ const EXECUTORS = {
  * Applies a change, or — when it touches sensitive data and the user cannot approve —
  * validates it fully, rolls back and queues it in <module>_approvals.
  */
-async function runChange(ctx, partyId, operation, payload) {
+async function runChange(ctx, partyId, operation, payload, { allowNoChange = false } = {}) {
   const { cfg } = ctx;
   ctx.assert('edit');
   const conn = await pool.getConnection();
@@ -199,7 +208,11 @@ async function runChange(ctx, partyId, operation, payload) {
     assertNotMerged(cfg, party);
     const meta = { actor: ctx.actor, role: ctx.role, reason: payload.reason || null };
     const result = await EXECUTORS[operation](conn, cfg, party, payload, meta);
-    if (result.noChange) throw httpError(400, 'No changes to save');
+    if (result.noChange) {
+      await conn.rollback();
+      if (allowNoChange) return { noChange: true };
+      throw httpError(400, 'No changes to save');
+    }
 
     if (result.sensitive && !ctx.can('approve')) {
       await conn.rollback();
@@ -568,6 +581,36 @@ function normalizeEditBody(cfg, raw = {}) {
   return body;
 }
 
+function isDummyProfileValue(field, val, currentVal) {
+  if (val === undefined || val === null) return false;
+  if (val === 'string' && currentVal !== 'string') return true;
+  if (val === 'user@example.com' && currentVal !== 'user@example.com') return true;
+  if (typeof val === 'object' && !Array.isArray(val) && Object.keys(val).length === 0) {
+    if (!currentVal || (typeof currentVal === 'object' && Object.keys(currentVal).length === 0)) return true;
+  }
+  return false;
+}
+
+function isProfileFieldEqual(specs, field, incomingVal, currentVal) {
+  if (incomingVal === currentVal) return true;
+  if (incomingVal == null && currentVal == null) return true;
+  const spec = specs[field];
+  if (spec?.type === 'bool') {
+    return Boolean(incomingVal) === Boolean(currentVal);
+  }
+  if (spec?.type === 'int') {
+    return Number(incomingVal) === Number(currentVal);
+  }
+  if (spec?.type === 'json') {
+    try {
+      return JSON.stringify(incomingVal) === JSON.stringify(currentVal);
+    } catch {
+      return false;
+    }
+  }
+  return String(incomingVal ?? '').trim() === String(currentVal ?? '').trim();
+}
+
 async function updateProfile(ctx, id, body) {
   const { cfg } = ctx;
   body = normalizeEditBody(cfg, body);
@@ -582,35 +625,87 @@ async function updateProfile(ctx, id, body) {
   // (profile "status" is only ACTIVE/INACTIVE; KYC values must not go into profile versions)
   const bodyStatus = cleanText(body.status)?.toUpperCase();
   const nestedKyc = body.kyc && typeof body.kyc === 'object' ? body.kyc : null;
-  let kycStatus = body.kyc_status ?? nestedKyc?.status ?? nestedKyc?.kyc_status;
-  if (kycStatus === undefined && KYC_STATUSES.includes(bodyStatus)) {
-    kycStatus = bodyStatus;
+  let kycStatus = body.kyc_status ?? body.kycStatus ?? nestedKyc?.status ?? nestedKyc?.kyc_status ?? nestedKyc?.kycStatus;
+  const normalizedBodyStatus = normalizeKycStatus(bodyStatus);
+  if (kycStatus === undefined && KYC_STATUSES.includes(normalizedBodyStatus)) {
+    kycStatus = normalizedBodyStatus;
+    delete body.status;
   }
-  if (kycStatus !== undefined) kycStatus = cleanText(kycStatus)?.toUpperCase();
+  if (kycStatus !== undefined) kycStatus = normalizeKycStatus(kycStatus);
+  if (body.status !== undefined && !['ACTIVE', 'INACTIVE'].includes(body.status)) {
+    delete body.status;
+  }
 
-  const changes = Object.fromEntries(
-    Object.keys(cfg.profile)
-      .filter((f) => body[f] !== undefined)
-      .filter((f) => !(f === 'status' && KYC_STATUSES.includes(bodyStatus)))
-      .map((f) => [f, body[f]])
-  );
+  const conn = await pool.getConnection();
+  let currentParty;
+  let latestProfile = null;
+  try {
+    currentParty = await loadParty(conn, ctx, id);
+    const versions = (await loadVersions(conn, cfg.versionTable, cfg.fk, [id])).get(id) || [];
+    latestProfile = versions[versions.length - 1] || null;
+  } finally {
+    conn.release();
+  }
+
+  // 1) Apply KYC independently if requested
+  let kycResult = null;
+  let kycChanged = false;
+  if (kycStatus !== undefined) {
+    if (!KYC_STATUSES.includes(kycStatus)) {
+      throw httpError(400, `kyc_status must be one of ${KYC_STATUSES.join(', ')}`);
+    }
+    const remarks = cleanText(body.kyc_remarks) ?? cleanText(nestedKyc?.remarks) ?? cleanText(body.reason) ?? null;
+    kycChanged = currentParty.kyc_status !== kycStatus || (currentParty.kyc_remarks ?? null) !== remarks;
+    kycResult = await setKyc(ctx, id, {
+      status: kycStatus,
+      remarks,
+    });
+  }
+
+  // 2) Collect only real profile diffs (ignoring dummy Swagger values and unchanged fields)
+  const changes = {};
+  for (const f of Object.keys(cfg.profile)) {
+    if (body[f] === undefined) continue;
+    if (f === 'status' && !['ACTIVE', 'INACTIVE'].includes(body[f])) continue;
+    const currentVal = latestProfile ? latestProfile[f] : undefined;
+    if (isDummyProfileValue(f, body[f], currentVal)) continue;
+    if (latestProfile && isProfileFieldEqual(cfg.profile, f, body[f], currentVal)) continue;
+    changes[f] = body[f];
+  }
   const hasProfileChanges = Object.keys(changes).length > 0;
 
   if (!hasProfileChanges && kycStatus === undefined) {
     throw httpError(400, 'No changes to save');
   }
 
-  let result = null;
+  let profileResult = null;
   if (hasProfileChanges) {
-    result = await runChange(ctx, id, 'PROFILE_UPDATE', editPayload(body, { changes }));
+    try {
+      profileResult = await runChange(ctx, id, 'PROFILE_UPDATE', editPayload(body, { changes }), {
+        allowNoChange: kycStatus !== undefined,
+      });
+    } catch (err) {
+      // Invalid GSTIN / JSON / placeholders must not block a KYC-only save
+      if (kycResult) {
+        // KYC succeeded, return KYC result without blocking on invalid profile diffs
+        return kycResult;
+      }
+      throw err;
+    }
   }
-  if (kycStatus !== undefined) {
-    result = await setKyc(ctx, id, {
-      status: kycStatus,
-      remarks: cleanText(body.kyc_remarks) ?? cleanText(nestedKyc?.remarks) ?? cleanText(body.reason),
-    });
+
+  const profileHadChanges = profileResult && !profileResult.noChange;
+  if (!profileHadChanges && !kycChanged && !kycResult) {
+    throw httpError(400, 'No changes to save');
   }
-  return result;
+
+  if (profileResult?.status === 'PENDING_APPROVAL') {
+    return profileResult;
+  }
+  if (kycResult) {
+    return kycResult;
+  }
+  return profileResult;
 }
 
 async function updateFinancial(ctx, id, body) {
@@ -908,9 +1003,9 @@ async function setKyc(ctx, id, body) {
   if (!ctx.can('approve') && !ctx.can('edit')) {
     throw httpError(403, `Permission ${cfg.key}.approve or ${cfg.key}.edit required`);
   }
-  const status = cleanText(body.status ?? body.kyc_status)?.toUpperCase();
+  const status = normalizeKycStatus(body.status ?? body.kyc_status ?? body.kycStatus);
   if (!KYC_STATUSES.includes(status)) throw httpError(400, `status must be one of ${KYC_STATUSES.join(', ')}`);
-  const remarks = cleanText(body.remarks ?? body.kyc_remarks) ?? null;
+  const remarks = cleanText(body.remarks ?? body.kyc_remarks ?? body.kycRemarks) ?? null;
 
   const conn = await pool.getConnection();
   try {

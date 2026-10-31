@@ -74,6 +74,7 @@ router.get('/', handle((ctx, req) => svc.listProducts(ctx, req.query)));
 router.post('/', handle((ctx, req) => svc.createProduct(ctx, req.body), 201));
 router.get('/:id', handle((ctx, req) => svc.getProduct(ctx, req.params.id, req.query)));
 router.put('/:id', handle((ctx, req) => svc.updateProduct(ctx, req.params.id, req.body)));
+router.delete('/:id', handle((ctx, req) => svc.deleteProduct(ctx, req.params.id, req.body || {}, req.query)));
 router.get('/:id/audit-logs', handle((ctx, req) => svc.auditLogs(ctx, req.query, req.params.id)));
 
 router.post('/:id/variants', handle((ctx, req) => svc.createVariant(ctx, req.params.id, req.body), 201));

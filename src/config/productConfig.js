@@ -7,6 +7,9 @@ const PRODUCT_CLASSIFICATIONS = [
   'TRADING_GOODS', 'CONSUMABLES', 'SPARE_PARTS', 'PACKAGING', 'SERVICES',
 ];
 
+/** Frontend item type (step 1): Product/Goods uses HSN; Service uses SAC. */
+const ITEM_TYPES = ['PRODUCT', 'SERVICE'];
+
 const PRODUCT_STATUSES = [
   'ACTIVE', 'INACTIVE', 'DISCONTINUED', 'UNDER_DEVELOPMENT',
 ];
@@ -22,6 +25,8 @@ const PREDEFINED_UOMS = [
   { code: 'PCS', name: 'Pieces', category: 'COUNT', decimal_precision: 0 },
   { code: 'NOS', name: 'Nos', category: 'COUNT', decimal_precision: 0 },
   { code: 'UNIT', name: 'Units', category: 'COUNT', decimal_precision: 0 },
+  { code: 'HR', name: 'Hours', category: 'COUNT', decimal_precision: 2 },
+  { code: 'DAY', name: 'Days', category: 'COUNT', decimal_precision: 2 },
   { code: 'KG', name: 'Kilograms', category: 'WEIGHT', decimal_precision: 3 },
   { code: 'GM', name: 'Grams', category: 'WEIGHT', decimal_precision: 3 },
   { code: 'LTR', name: 'Liters', category: 'VOLUME', decimal_precision: 3 },
@@ -70,6 +75,8 @@ const DEFAULT_CATEGORY_TREE = [
       { code: 'WIRES-CU', name: 'Copper Wires' },
       { code: 'WIRES-AL', name: 'Aluminium Wires' },
       { code: 'WIRES-FLEX', name: 'Flexible Cables' },
+      { code: 'WIRES-HOUSE', name: 'House Wires' },
+      { code: 'WIRES-FR', name: 'House Wires (FR/FRLS/ZHFR)' },
     ],
   },
   {
@@ -78,6 +85,7 @@ const DEFAULT_CATEGORY_TREE = [
       { code: 'FANS-CEIL', name: 'Ceiling Fans' },
       { code: 'FANS-EXH', name: 'Exhaust Fans' },
       { code: 'FANS-TBL', name: 'Table Fans' },
+      { code: 'FANS-HOUSE', name: 'House Fans' },
     ],
   },
   {
@@ -131,6 +139,7 @@ const DEFAULT_CATEGORY_TREE = [
 const PRODUCT_VERSION_FIELDS = {
   name: { type: 'text', max: 255, required: true },
   model_number: { type: 'text', max: 100 },
+  item_type: { type: 'enum', values: ITEM_TYPES, default: 'PRODUCT' },
   classification: { type: 'enum', values: PRODUCT_CLASSIFICATIONS, required: true },
   brand: { type: 'text', max: 120 },
   brand_id: { type: 'int' },
@@ -182,10 +191,12 @@ const PRICE_VERSION_FIELDS = {
   currency: { type: 'text', max: 8, default: 'INR' },
   min_margin_percent: { type: 'text', max: 20 },
   discount_percent: { type: 'text', max: 20 },
+  max_price_discount: { type: 'text', max: 40 },
 };
 
 module.exports = {
   PRODUCT_CLASSIFICATIONS,
+  ITEM_TYPES,
   PRODUCT_STATUSES,
   MEDIA_TYPES,
   UOM_CATEGORIES,

@@ -185,15 +185,62 @@ function sidePaths(side) {
     ...(side.key === 'sales' ? { override_credit_limit: { type: 'boolean', description: 'Needs sales.approve' } } : {}),
     narration: { type: 'string' }, reason: { type: 'string' },
   };
+  const purchaseLines = [
+    {
+      description: 'Havells 2.5 sq mm FR Wire Red 90m Box',
+      hsn_sac: '85360000',
+      qty: 10,
+      unit: 'ROLL',
+      rate: 1450,
+      discount_percent: 5,
+      gst_rate: 18,
+      itc_eligible: true,
+    },
+    {
+      description: 'Electrical Installation & Safety Audit Service',
+      hsn_sac: '998313',
+      qty: 1,
+      unit: 'JOB',
+      rate: 7500,
+      discount_percent: 0,
+      gst_rate: 18,
+      itc_eligible: true,
+    },
+  ];
+
   const examples = {
     [invoice]: {
-      value: {
+      value: side.key === 'purchases' ? {
+        company_id: 1,
+        voucher_type: 'PURCHASE_INVOICE',
+        vendor_id: 14,
+        series_id: 6,
+        voucher_date: '2026-10-28',
+        reference_no: 'PUR/2026-27/0042',
+        reference_date: '2026-10-28',
+        place_of_supply: '27',
+        branch_id: null,
+        narration: 'Purchase Inward Bill #PUR/2026-27/0042 from string (27AAPFU0939F1ZV) assigned to Head Office / Store [Jyoti Electricals] • 2 items • Intra-state CGST+SGST (Maharashtra) • Total Payable: ₹24,955 [TDS Deducted: ₹150]',
+        lines: purchaseLines,
+      } : {
         company_id: 1, voucher_type: invoice, [fk]: 1, voucher_date: '2026-10-14',
-        ...(side.key === 'purchases' ? { reference_no: 'SUP/1023', reference_date: '2026-10-12' } : {}),
         lines: [{ description: 'TMT Bar 12mm', hsn_sac: '7214', qty: 1000, unit: 'KGS', rate: 58, gst_rate: 18 }],
       },
     },
-    [settle]: { value: { company_id: 1, voucher_type: settle, [fk]: 1, amount: 50000, payment_mode: 'NEFT', instrument_no: 'UTR123', auto_allocate: true } },
+    [settle]: {
+      value: side.key === 'purchases' ? {
+        company_id: 1,
+        voucher_type: 'PAYMENT',
+        vendor_id: 14,
+        voucher_date: '2026-10-28',
+        amount: 24955,
+        payment_mode: 'BANK_TRANSFER',
+        instrument_no: 'NEFT/RTGS',
+        auto_allocate: true,
+      } : {
+        company_id: 1, voucher_type: settle, [fk]: 1, amount: 50000, payment_mode: 'NEFT', instrument_no: 'UTR123', auto_allocate: true,
+      },
+    },
     [ret]: { value: { company_id: 1, voucher_type: ret, [fk]: 1, against_voucher_id: 1, lines: [{ description: 'TMT Bar 12mm returned', hsn_sac: '7214', qty: 50, unit: 'KGS', rate: 58, gst_rate: 18 }] } },
   };
   const party = `${base}/${side.partyPath}/{partyId}`;
@@ -321,8 +368,54 @@ function sidePaths(side) {
         responses: ok(),
       }),
     },
+    ...(side.key === 'sales' ? {
+      [`${base}/sales-persons`]: {
+        get: op('Fetch only sales person employee codes and profiles from HRMS DB', {
+          description: 'Fetches active employees from the HRMS database who belong to the Sales department or have a Sales/Salesman designation.',
+          parameters: [
+            q('company_id', { type: 'integer' }, 'Local ERP company ID or HRMS tenant ID'),
+            q('tenant_id', { type: 'integer' }, 'HRMS tenant ID'),
+            q('search', { type: 'string' }, 'Search text across employee code, name, email'),
+            q('designation_only', { type: 'boolean' }, 'Filter only designation Salesman/Sale'),
+            q('codes_only', { type: 'boolean' }, 'Return only string array of codes'),
+            q('status', { type: 'string', enum: ['active', 'inactive', 'all'] }, 'Status filter'),
+          ],
+          responses: {
+            200: {
+              description: 'List of sales person employees or codes',
+              content: {
+                'application/json': {
+                  schema: { type: 'array', items: { $ref: '#/components/schemas/HrmsSalesPerson' } },
+                },
+              },
+            },
+          },
+        }),
+      },
+      [`${base}/sales-person-codes`]: {
+        get: op('Quick fetch array of only sales person employee codes from HRMS DB', {
+          description: 'Returns only a string array of sales person employee codes (e.g. ["EMP0002", "EMP0006"]).',
+          parameters: [
+            q('company_id', { type: 'integer' }),
+            q('tenant_id', { type: 'integer' }),
+            q('search', { type: 'string' }),
+          ],
+          responses: {
+            200: {
+              description: 'Array of employee code strings',
+              content: {
+                'application/json': {
+                  schema: { type: 'array', items: { type: 'string', example: 'EMP0006' } },
+                },
+              },
+            },
+          },
+        }),
+      },
+    } : {}),
   };
 }
+
 
 function buildAccountingSwagger() {
   return {

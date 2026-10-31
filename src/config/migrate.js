@@ -70,6 +70,17 @@ async function addIndexIfMissing(connection, table, indexName, ddl) {
  */
 const MIGRATIONS = [
   {
+    id: '011_product_item_type_and_price_discount',
+    async up(connection) {
+      await addColumnIfMissing(connection, 'product_versions',
+        "ADD COLUMN item_type VARCHAR(20) NOT NULL DEFAULT 'PRODUCT' AFTER model_number");
+      await addIndexIfMissing(connection, 'product_versions', 'idx_product_ver_item_type',
+        'ADD INDEX idx_product_ver_item_type (item_type)');
+      await addColumnIfMissing(connection, 'product_price_versions',
+        'ADD COLUMN max_price_discount DECIMAL(18,4) NULL AFTER discount_percent');
+    },
+  },
+  {
     id: '010_product_bk_version_columns',
     async up(connection) {
       await addColumnIfMissing(connection, 'product_versions',

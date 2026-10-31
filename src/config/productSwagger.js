@@ -22,45 +22,71 @@ const EFFECTIVE = {
 const TAG = '06 Products';
 const op = (summary, rest = {}) => ({ tags: [TAG], summary, ...rest });
 
-const SAMPLE_CREATE = {
+const SAMPLE_PRODUCT_HSN = {
   company_id: 1,
-  sku: 'SKU-ITEM-1590',
-  product_code: 'ITM-2026-1590',
-  name: 'Havells 2.5 sq mm FR Flame Retardant Wire Red 90m',
-  barcode: '890751698910',
-  qr_code: 'QR-ITM-1590',
+  item_type: 'PRODUCT',
+  branch: 'HO',
+  sku: 'SKU-ITEM-2994',
+  product_code: 'ITM-2026-2994',
+  name: 'Havells 2.5 sq mm FR Flame Retardant Wire Red 90m Box Roll',
+  barcode: '890167827315',
+  qr_code: 'QR-ITM-2994',
   model_number: 'WHFFDNRA2X50',
-  internal_item_code: 'INT-ITM-1590',
+  internal_item_code: 'INT-ITM-2994',
   classification: 'FINISHED_GOODS',
-  category_id: 1,
-  subcategory_id: 2,
+  category: 'Wires',
+  subcategory: 'Copper Wires',
   brand: 'Havells',
   manufacturer: 'Havells India Ltd.',
-  model: 'Single Core Copper',
-  specifications: {
-    child_type: 'Single Core Copper',
-    summary: '100% Electrolytic Copper, 1100V, FR PVC, 90m Box Roll',
-  },
+  child_type: 'Single Core Copper',
+  spec_summary: '100% Electrolytic Copper, 1100V, FR PVC, 90m Box Roll',
   description: 'House wiring FR flame retardant copper cable.',
   status: 'ACTIVE',
-  tag_ids: [],
-  gst: {
-    code_type: 'HSN',
-    hsn_sac: '85360000',
-    gst_rate: 18,
-    tax_type: 'TAXABLE',
-  },
-  prices: {
-    retail_price: 450,
-    purchase_price: 380,
-    standard_cost: 350,
-  },
-  effective_date: '2026-10-23',
-  reason: 'Sample product create',
+  stock_uom: 'MTR',
+  opening_qty: 100,
+  reorder_level: 20,
+  sellable: true,
+  tags: ['High-Demand'],
+  // Flat 6-step form fields (also accept nested gst / prices)
+  hsn: '85369090',
+  gst_rate: 18,
+  purchase_cost: 1450,
+  mrp: 1850,
+  sale_price: 1600,
+  max_discount_percent: 5,
+  max_price_discount: 50,
+  effective_date: '2026-10-28',
+  reason: 'Product (Goods) Havells wire onboarding sample',
 };
+
+const SAMPLE_SERVICE_SAC = {
+  company_id: 1,
+  item_type: 'SERVICE',
+  sku: 'SRV-INSTALL-001',
+  name: 'Electrical Cabling and Installation Service',
+  classification: 'SERVICES',
+  category: 'Wires',
+  description: 'On-site industrial cable routing and termination service.',
+  status: 'ACTIVE',
+  sellable: true,
+  tags: ['Industrial'],
+  // Flat 6-step form fields (also accept nested gst / prices)
+  sac: '998313',
+  gst_rate: 18,
+  sale_price: 1500,
+  purchase_cost: 1000,
+  uom: 'Hours',
+  effective_date: '2026-10-23',
+  reason: 'Service item with SAC create sample',
+};
+
+const SAMPLE_CREATE = SAMPLE_PRODUCT_HSN;
 
 const productProps = {
   company_id: { type: 'integer', example: 1 },
+  branch: { type: 'string', example: 'HO', description: 'Dynamic branch assignment: branch code (e.g. "HO" for Head Office), branch name, or "All Branches / Main Store (Company-wide)"' },
+  branch_id: { type: 'integer', example: null, description: 'Direct Branch ID (optional: null = All Branches / Company-wide)' },
+  item_type: { type: 'string', enum: ['PRODUCT', 'SERVICE'], example: 'PRODUCT', description: 'Item type: PRODUCT (Goods) or SERVICE' },
   sku: { type: 'string', example: 'SKU-ITEM-1590' },
   product_code: { type: 'string', example: 'ITM-2026-1590' },
   internal_item_code: { type: 'string', example: 'INT-ITM-1590' },
@@ -70,10 +96,14 @@ const productProps = {
   model_number: { type: 'string', example: 'WHFFDNRA2X50' },
   classification: { type: 'string', enum: PRODUCT_CLASSIFICATIONS, example: 'FINISHED_GOODS' },
   brand: { type: 'string', example: 'Havells' },
+  category: { type: 'string', example: 'Wires', description: 'Category id, code or name' },
+  subcategory: { type: 'string', example: 'Copper Wires', description: 'Subcategory id, code or name' },
   category_id: { type: 'integer', example: 1, description: 'From GET /api/products/categories' },
   subcategory_id: { type: 'integer', example: 2 },
   manufacturer: { type: 'string', example: 'Havells India Ltd.' },
+  child_type: { type: 'string', example: 'Single Core Copper' },
   model: { type: 'string', example: 'Single Core Copper', description: 'Child specification / type' },
+  spec_summary: { type: 'string', example: '100% Electrolytic Copper, 1100V, FR PVC, 90m Box Roll' },
   specifications: {
     type: 'object',
     additionalProperties: true,
@@ -82,12 +112,29 @@ const productProps = {
   description: { type: 'string' },
   technical_attributes: { type: 'object', additionalProperties: true },
   status: { type: 'string', enum: PRODUCT_STATUSES, example: 'ACTIVE' },
+  sellable: { type: 'boolean', example: true, description: 'Sellable toggle (maps to block_sales=0)' },
   block_purchase: { type: 'boolean' },
   block_sales: { type: 'boolean' },
+  uom: { type: 'string', example: 'Meters', description: 'UOM id, code or name (e.g. Meters, Hours, PCS). Alias: stock_uom' },
+  stock_uom: { type: 'string', example: 'MTR', description: 'Alias of uom / stock_uom_id (frontend step 4)' },
+  stock_uom_id: { type: 'integer', example: 10 },
+  hsn: { type: 'string', example: '85369090', description: 'PRODUCT only — maps to gst.code_type=HSN + gst.hsn_sac' },
+  sac: { type: 'string', example: '998313', description: 'SERVICE only — maps to gst.code_type=SAC + gst.hsn_sac (6 digits)' },
+  hsn_code: { type: 'string', example: '85369090' },
+  sac_code: { type: 'string', example: '998313' },
+  gst_rate: { type: 'number', enum: [0, 5, 12, 18, 28], example: 18, description: 'Top-level GST % (also nested under gst.gst_rate)' },
+  purchase_cost: { type: 'number', example: 1450, description: 'Step 2 purchase cost → prices.purchase_price' },
+  mrp: { type: 'number', example: 1850, description: 'Step 2 MRP → prices.retail_price' },
+  sale_price: { type: 'number', example: 1600, description: 'Step 2 sale price → prices.wholesale_price' },
+  max_discount_percent: { type: 'number', example: 15 },
+  max_price_discount: { type: 'number', example: 50 },
+  opening_qty: { type: 'number', example: 100, description: 'Opening stock quantity (Product only; ignored for SERVICE)' },
+  reorder_level: { type: 'number', example: 20, description: 'Reorder stock level (Product only; ignored for SERVICE)' },
+  tags: { type: 'array', items: { type: 'string' }, example: ['Copper', 'High Voltage'] },
   tag_ids: { type: 'array', items: { type: 'integer' }, example: [] },
   gst: {
     type: 'object',
-    description: 'Optional on create — HSN/SAC + GST (also PUT /api/products/{id}/gst)',
+    description: 'Optional on create — HSN (PRODUCT) or SAC (SERVICE) + GST rate. Prefer top-level hsn/sac + gst_rate from the 6-step form.',
     properties: {
       code_type: { type: 'string', enum: ['HSN', 'SAC'], example: 'HSN' },
       hsn_sac: { type: 'string', example: '85360000' },
@@ -100,11 +147,13 @@ const productProps = {
     type: 'object',
     description: 'Optional on create — selling / purchase / standard cost (also PUT /api/products/{id}/prices)',
     properties: {
-      retail_price: { type: 'number', example: 450, description: 'Selling price' },
+      retail_price: { type: 'number', example: 450, description: 'Selling price / MRP' },
       purchase_price: { type: 'number', example: 380, description: 'Purchase cost' },
       wholesale_price: { type: 'number' },
       commercial_price: { type: 'number' },
       standard_cost: { type: 'number', example: 350 },
+      max_price_discount: { type: 'number', example: 50 },
+      discount_percent: { type: 'number', example: 10 },
     },
   },
   ...EFFECTIVE,
@@ -155,12 +204,7 @@ function productPaths() {
         responses: { 201: { description: 'Created' } },
       }),
     },
-    '/api/products/categories/seed': {
-      post: op('Seed default electronics categories for a company (idempotent by code)', {
-        requestBody: body(obj({ company_id: { type: 'integer' }, ...EFFECTIVE }, ['company_id'])),
-        responses: { 201: { description: 'Seeded / existing returned' } },
-      }),
-    },
+    // /api/products/categories/seed — hidden from Swagger (internal only)
     '/api/products/categories/{id}': {
       put: op('Edit category name / status with effective date', {
         parameters: [id],
@@ -194,12 +238,16 @@ function productPaths() {
         ],
         responses: ok(),
       }),
-      post: op('Add product (Tab 1+2: identification, classification, GST, prices, tags)', {
-        description: 'Create product master. Optional nested `gst` and `prices` are saved with effective_date. Change sku/barcode each try (unique per company). category_id/subcategory_id from GET /categories (seed first if empty).',
-        requestBody: body(obj(productProps, ['company_id', 'sku', 'name', 'classification']), {
-          wireCable: {
-            summary: 'Finished goods — house wire (full form sample)',
-            value: SAMPLE_CREATE,
+      post: op('Add product or service (6-step form: identification, classification, GST, prices, inventory, tags)', {
+        description: 'Create product (Goods) with HSN or Service with SAC. Supports camelCase and snake_case keys. Nested `gst` and `prices` are saved with effective_date.',
+        requestBody: body(obj(productProps, ['company_id', 'sku', 'name']), {
+          productHsn: {
+            summary: 'Product (Goods) + HSN example (6-step form)',
+            value: SAMPLE_PRODUCT_HSN,
+          },
+          serviceSac: {
+            summary: 'Service + SAC example (6-step form)',
+            value: SAMPLE_SERVICE_SAC,
           },
         }),
         responses: { 201: { description: 'Created' } },
@@ -214,6 +262,24 @@ function productPaths() {
         parameters: [id],
         requestBody: body(obj(productProps)),
         responses: ok(),
+      }),
+      delete: op('Delete product (soft → INACTIVE; hard=true permanent if unused)', {
+        description: 'Default soft-delete sets status=INACTIVE and blocks purchase/sales. Pass `hard: true` (body or query) to permanently remove only when there is no stock / inventory history / BOM link.',
+        parameters: [
+          id,
+          q('hard', { type: 'boolean' }, 'Permanent delete if unused'),
+          q('effective_date', date),
+          q('reason'),
+        ],
+        requestBody: body(obj({
+          hard: { type: 'boolean', example: false },
+          reason: { type: 'string', example: 'Removed from catalogue' },
+          effective_date: date,
+        })),
+        responses: {
+          200: { description: 'Deleted (soft or hard)' },
+          409: { description: 'Hard delete blocked — stock or history exists' },
+        },
       }),
     },
     '/api/products/{id}/audit-logs': {

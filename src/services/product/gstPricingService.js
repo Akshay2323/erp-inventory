@@ -51,14 +51,38 @@ async function getGst(ctx, productId, query = {}) {
   };
 }
 
+function parseGstRate(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  if (typeof raw === 'number') return raw;
+  const str = String(raw).trim();
+  const m = str.match(/^(\d+(?:\.\d+)?)/);
+  if (m) {
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  const n = Number(str.replace(/%/g, '').trim());
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function validateHsnSac(codeType, raw) {
+  const code = String(raw || '').replace(/\s/g, '');
+  if (codeType === 'SAC') {
+    if (!/^\d{6}$/.test(code)) throw httpError(400, 'SAC must be 6 digits (e.g. 998313)');
+    return code;
+  }
+  if (!/^(\d{4}|\d{6}|\d{8})$/.test(code)) throw httpError(400, 'HSN must be 4, 6 or 8 digits');
+  return code;
+}
+
 async function setGst(ctx, productId, body = {}) {
   ctx.assert('edit');
   const product = await loadProduct(pool, ctx, productId);
-  const codeType = (cleanText(body.code_type) || 'HSN').toUpperCase();
-  const hsnSac = cleanText(body.hsn_sac);
+  const codeType = (cleanText(body.code_type) || (cleanText(body.sac || body.sac_code) ? 'SAC' : 'HSN')).toUpperCase();
+  const hsnSacRaw = body.hsn_sac ?? body.hsn ?? body.hsn_code ?? body.sac ?? body.sac_code;
   if (!HSN_SAC_TYPES.includes(codeType)) throw httpError(400, `code_type must be HSN or SAC`);
-  if (!hsnSac) throw httpError(400, 'hsn_sac is required');
-  const gstRate = Number(body.gst_rate);
+  if (hsnSacRaw == null || hsnSacRaw === '') throw httpError(400, codeType === 'SAC' ? 'sac is required for SERVICE items' : 'hsn_sac is required');
+  const hsnSac = validateHsnSac(codeType, hsnSacRaw);
+  const gstRate = parseGstRate(body.gst_rate);
   if (!GST_RATES.includes(gstRate)) throw httpError(400, `gst_rate must be one of ${GST_RATES.join(', ')}`);
   const taxType = (cleanText(body.tax_type) || 'TAXABLE').toUpperCase();
   if (!TAX_TYPES.includes(taxType)) throw httpError(400, `tax_type must be one of ${TAX_TYPES.join(', ')}`);
@@ -118,6 +142,7 @@ async function getPrices(ctx, productId, query = {}) {
     currency: v.currency,
     min_margin_percent: v.min_margin_percent != null ? Number(v.min_margin_percent) : null,
     discount_percent: v.discount_percent != null ? Number(v.discount_percent) : null,
+    max_price_discount: v.max_price_discount != null ? Number(v.max_price_discount) : null,
     effective_from: v.effective_from,
     effective_to: v.effective_to,
     created_by: v.created_by,
@@ -137,15 +162,23 @@ async function setPrices(ctx, productId, body = {}) {
     standard_cost: numOrNull(body.standard_cost),
     currency: cleanText(body.currency) || 'INR',
     min_margin_percent: numOrNull(body.min_margin_percent),
-    discount_percent: numOrNull(body.discount_percent),
+    discount_percent: numOrNull(body.discount_percent ?? body.max_discount_percent ?? body.max_discount),
+    max_price_discount: numOrNull(body.max_price_discount),
   };
   if (Object.values(data).every((v, i) => i >= 5 || v == null) && data.purchase_price == null && data.retail_price == null) {
     // allow if at least one price field sent
   }
-  const hasPrice = ['purchase_price', 'retail_price', 'wholesale_price', 'commercial_price', 'standard_cost']
+  const hasPrice = ['purchase_price', 'retail_price', 'wholesale_price', 'commercial_price', 'standard_cost',
+    'max_price_discount', 'mrp', 'sale_price', 'purchase_cost']
     .some((k) => body[k] !== undefined);
-  if (!hasPrice && body.min_margin_percent === undefined && body.discount_percent === undefined) {
+  if (!hasPrice && body.min_margin_percent === undefined && body.discount_percent === undefined
+    && body.max_discount_percent === undefined && body.max_discount === undefined) {
     throw httpError(400, 'Provide at least one price field');
+  }
+  if (body.purchase_price == null && body.purchase_cost != null) data.purchase_price = numOrNull(body.purchase_cost);
+  if (body.retail_price == null && body.mrp != null) data.retail_price = numOrNull(body.mrp);
+  if (body.wholesale_price == null && (body.sale_price != null || body.selling_price != null)) {
+    data.wholesale_price = numOrNull(body.sale_price ?? body.selling_price);
   }
 
   const versions = (await loadVersions(pool, 'product_price_versions', 'product_id', [product.id])).get(product.id) || [];
@@ -237,4 +270,6 @@ module.exports = {
   setPrices,
   listVendorMappings,
   upsertVendorMapping,
+  parseGstRate,
+  validateHsnSac,
 };

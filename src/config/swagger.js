@@ -21,6 +21,10 @@ const TAGS = [
     description: 'STEP 1 — Company master: add/edit with effective date, logo, auto-fetch from HRMS',
   },
   {
+    name: '02 HRMS',
+    description: 'HRMS Database Integration — auto-fetch sales person employee codes, companies, branches',
+  },
+  {
     name: '03 Branches',
     description: 'STEP 2 — Company-wise branches: effective date, map location (India), auto-fetch from HRMS',
   },
@@ -88,7 +92,15 @@ const accounting = buildAccountingSwagger();
 spec.tags.push(...accounting.tags);
 Object.assign(spec.paths, accounting.paths);
 
+/** Seed / internal helpers — keep routes mounted, hide from Swagger UI. */
+const HIDDEN_PATHS = [
+  '/api/products/categories/seed',
+  '/api/products/uoms/seed',
+  '/api/products/tags/seed-suggested',
+];
+
 spec.tags = (spec.tags || []).filter((t) => !HIDDEN_TAGS.has(t.name));
+for (const path of HIDDEN_PATHS) delete spec.paths[path];
 for (const [path, methods] of Object.entries(spec.paths || {})) {
   for (const [method, op] of Object.entries(methods)) {
     if (!op || typeof op !== 'object' || !Array.isArray(op.tags)) continue;

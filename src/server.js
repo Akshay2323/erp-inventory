@@ -9,6 +9,7 @@ const { protectApi } = require('./middleware/protectApi');
 const authRouter = require('./routes/auth');
 const companiesRouter = require('./routes/companies');
 const branchesRouter = require('./routes/branches');
+const hrmsRouter = require('./routes/hrms');
 const { createPartyRouter } = require('./routes/partyRouter');
 const { CLIENT, VENDOR } = require('./config/partyModules');
 const productsRouter = require('./routes/products');
@@ -69,6 +70,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/companies', companiesRouter);
 app.use('/api/branches', branchesRouter);
+app.use('/api/hrms', hrmsRouter);
 app.use('/api/clients', createPartyRouter(CLIENT));
 app.use('/api/vendors', createPartyRouter(VENDOR));
 app.use('/api/products', productsRouter);

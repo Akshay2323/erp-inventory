@@ -127,6 +127,24 @@ function createVoucherRouter(side) {
     ctx.assert('audit');
     return listLogs(ctx, side.auditTable, req.query, { partyFk: side.partyFk });
   }));
+
+  if (side.key === 'sales') {
+    const { listHrmsSalesPersons } = require('../services/hrmsService');
+    router.get('/sales-persons', async (req, res) => {
+      try {
+        res.json(await listHrmsSalesPersons(req.user, req.authSource, req.query));
+      } catch (err) {
+        sendError(res, err);
+      }
+    });
+    router.get('/sales-person-codes', async (req, res) => {
+      try {
+        res.json(await listHrmsSalesPersons(req.user, req.authSource, { ...req.query, codes_only: true }));
+      } catch (err) {
+        sendError(res, err);
+      }
+    });
+  }
   return router;
 }
 

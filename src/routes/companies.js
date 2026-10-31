@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { uploadLogo } = require('../middleware/uploadLogo');
 const { sendError } = require('../services/common');
-const { getHrmsStatus, listHrmsTenants, getHrmsTenantForForm } = require('../services/hrmsService');
+const { getHrmsStatus, listHrmsTenants, getHrmsTenantForForm, listHrmsSalesPersons } = require('../services/hrmsService');
 const {
   listCompanies,
   getCompany,
@@ -54,6 +54,31 @@ const {
  *           format: date
  *           description: Same as effective_date (accepted on edit so forms that send effective_from work)
  *         remarks: { type: string, example: Address changed }
+ *     HrmsSalesPerson:
+ *       type: object
+ *       properties:
+ *         id: { type: integer, example: 7, description: Employee ID in HRMS }
+ *         employee_code: { type: string, example: EMP0006, description: Sales person employee code }
+ *         full_name: { type: string, example: Rohit shinde }
+ *         name: { type: string, example: Rohit shinde }
+ *         first_name: { type: string, example: Rohit }
+ *         last_name: { type: string, example: shinde }
+ *         email: { type: string, format: email, example: rohitshindefbo@gmail.com }
+ *         mobile: { type: string, example: '6356173568' }
+ *         gender: { type: string, nullable: true, example: male }
+ *         status: { type: string, example: active }
+ *         company_id: { type: integer, example: 1 }
+ *         tenant_id: { type: integer, example: 1 }
+ *         company_name: { type: string, example: Jyoti Electricals }
+ *         branch_id: { type: integer, example: 2 }
+ *         branch_name: { type: string, example: Head Office }
+ *         department_id: { type: integer, example: 4 }
+ *         department_name: { type: string, example: Sales }
+ *         department_code: { type: string, example: Sales }
+ *         designation_id: { type: integer, example: 8 }
+ *         designation_name: { type: string, example: Salesman }
+ *         designation_code: { type: string, example: Salesman }
+ *         user_id: { type: integer, nullable: true, example: 13, description: Matched user ID in HRMS users table }
  */
 
 /**
@@ -119,6 +144,79 @@ router.get('/hrms/tenants/:id', async (req, res) => {
     sendError(res, err);
   }
 });
+
+/**
+ * @swagger
+ * /api/companies/hrms/sales-persons:
+ *   get:
+ *     tags: [02 Companies, 02 HRMS, 08 Sales]
+ *     summary: Fetch only sales person employee codes and details from HRMS DB
+ *     description: |
+ *       Fetches active employees from the HRMS database who belong to the Sales department or have a Sales/Salesman designation.
+ *       Only sales personnel are returned (filtered from all HRMS employees).
+ *     parameters:
+ *       - in: query
+ *         name: company_id
+ *         description: Local ERP company ID or HRMS tenant ID (auto-scoped to accessible company)
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: tenant_id
+ *         description: Direct HRMS tenant ID filter
+ *         schema: { type: integer, example: 1 }
+ *       - in: query
+ *         name: search
+ *         description: Search by employee code, name, email or mobile
+ *         schema: { type: string, example: EMP0006 }
+ *       - in: query
+ *         name: designation_only
+ *         description: If true, only returns employees whose designation contains 'sale' (e.g. Salesman)
+ *         schema: { type: boolean, default: false }
+ *       - in: query
+ *         name: codes_only
+ *         description: If true, returns an array of employee code strings e.g. ["EMP0002", "EMP0006"]
+ *         schema: { type: boolean, default: false }
+ *       - in: query
+ *         name: branch_id
+ *         description: Filter by HRMS branch ID
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: status
+ *         description: Employee status filter
+ *         schema: { type: string, enum: [active, inactive, all], default: active }
+ *     responses:
+ *       200:
+ *         description: List of sales persons or employee codes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/HrmsSalesPerson'
+ */
+router.get('/hrms/sales-persons', async (req, res) => {
+  try {
+    res.json(await listHrmsSalesPersons(req.user, req.authSource, req.query));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.get('/hrms/salespersons', async (req, res) => {
+  try {
+    res.json(await listHrmsSalesPersons(req.user, req.authSource, req.query));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.get('/hrms/sales-person-codes', async (req, res) => {
+  try {
+    res.json(await listHrmsSalesPersons(req.user, req.authSource, { ...req.query, codes_only: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 
 /**
  * @swagger

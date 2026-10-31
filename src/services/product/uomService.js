@@ -21,7 +21,10 @@ async function seedSystemUoms() {
       [u.code, u.name, u.category, u.decimal_precision]
     );
   }
-  return listUoms({ assert() {} }, {});
+  const [rows] = await pool.query(
+    `SELECT * FROM units_of_measure WHERE company_id IS NULL ORDER BY category, code`
+  );
+  return rows;
 }
 
 async function listUoms(ctx, query = {}) {
@@ -30,12 +33,22 @@ async function listUoms(ctx, query = {}) {
   if (companyId && !ctx.canSeeCompany?.(companyId) && ctx.companyIds !== null) {
     // allow system list without company
   }
-  const [rows] = await pool.query(
+  let [rows] = await pool.query(
     `SELECT * FROM units_of_measure
      WHERE company_id IS NULL OR company_id = ?
      ORDER BY is_system DESC, category, code`,
     [companyId || 0]
   );
+  // Auto-heal after truncate: ensure system UOMs always available for the form
+  if (!rows.some((r) => r.company_id == null)) {
+    await seedSystemUoms();
+    [rows] = await pool.query(
+      `SELECT * FROM units_of_measure
+       WHERE company_id IS NULL OR company_id = ?
+       ORDER BY is_system DESC, category, code`,
+      [companyId || 0]
+    );
+  }
   return rows.filter((r) => !query.category || r.category === String(query.category).toUpperCase())
     .filter((r) => !query.status || r.status === String(query.status).toUpperCase());
 }
